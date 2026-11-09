@@ -1,0 +1,51 @@
+name: DG-REALTIME-01 | Josue Cedar offline verification
+
+on:
+  pull_request:
+    paths:
+      - "tools/dg_realtime_01_josue_cedar/**"
+      - ".github/workflows/05-josue-cedar-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dg-realtime-01-offline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CI: "true"
+    defaults:
+      run:
+        working-directory: tools/dg_realtime_01_josue_cedar
+    steps:
+      - name: Checkout without stored credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify unchanged P0.3 archive, P0.2 tests, plan
+        run: node scripts/verify_local.mjs
+      - name: Execute additional P0.3 negative tests
+        run: node --test tests/p03_readiness.test.mjs
+      - name: Prove remote release is still NO_GO (exit 2 is expected)
+        shell: bash
+        run: |
+          set +e
+          node scripts/p03_readiness.mjs > readiness.json
+          result=$?
+          set -e
+          if [ "$result" -ne 2 ]; then
+            echo "READINESS_EXIT_UNEXPECTED=$result"
+            exit 1
+          fi
+          node --input-type=module -e 'import fs from "node:fs"; const r=JSON.parse(fs.readFileSync("readiness.json","utf8")); if(r.execution!=="NO_GO" || r.p02_immutable!==true) process.exit(1); console.log("EXPECTED_REMOTE_LOCK=NO_GO");'
+          rm readiness.json
