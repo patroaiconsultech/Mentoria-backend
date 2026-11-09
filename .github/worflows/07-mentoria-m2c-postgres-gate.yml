@@ -1,0 +1,179 @@
+name: Mentoria M2-C1 isolated PostgreSQL qualification (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact 40-hex Git commit approved for this disposable test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-m2c-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    # This is NOT deployment, nor an operational database connection.
+    services:
+      postgres:
+        # Docker Hub postgres:16 multi-arch index; pin reviewed on 2026-11-08.
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: mentoria_ci
+          POSTGRES_PASSWORD: isolated_test_only
+          POSTGRES_DB: mentoria_ci_m2c_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U mentoria_ci -d mentoria_ci_m2c_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      CI: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PLATFORM_ENVIRONMENT: "test"
+      PLATFORM_AUTH_MODE: "test"
+      PLATFORM_INVITATION_TOKEN_SECRET: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      MENTORIA_M2_ENABLED: "true"
+      MENTORIA_M2C_ENABLED: "true"
+      MENTORIA_M2C2_ENABLED: "true"
+      MENTORIA_M2C2B_ENABLED: "true"
+      MENTORIA_M2C2B_PG_ALLOW: "true"
+      MENTORIA_M2C_ALLOW_SCHEMA_TEST: "true"
+      MENTORIA_M2C_TEST_DATABASE_URL: "postgresql+psycopg://mentoria_ci:isolated_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/mentoria_ci_m2c_test"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify human-pinned exact source commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          git diff --exit-code
+          echo "CHECKOUT_SHA=$EXPECTED_SHA"
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install project test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+      - name: Prove the PostgreSQL service is an isolated empty CI container
+        env:
+          SERVICE_ID: ${{ job.services.postgres.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SERVICE_ID"
+          test "$(docker inspect -f '{{.State.Running}}' "$SERVICE_ID")" = "true"
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+          u = make_url(os.environ["MENTORIA_M2C_TEST_DATABASE_URL"])
+          assert os.environ["CI"] == "true"
+          assert os.environ["PLATFORM_ENVIRONMENT"] == "test"
+          assert u.get_backend_name() == "postgresql"
+          assert u.host == "127.0.0.1"
+          assert u.username == "mentoria_ci" and u.database == "mentoria_ci_m2c_test"
+          assert isinstance(u.port, int) and u.port > 0
+          engine = create_engine(u)
+          with engine.connect() as connection:
+              name = connection.scalar(text("SELECT current_database()"))
+              version = connection.scalar(text("SHOW server_version"))
+              count = connection.scalar(text(
+                  "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'"
+              ))
+              assert name == "mentoria_ci_m2c_test" and count == 0, (name, count)
+              print(f"PG_DISPOSABLE_VERIFIED db={name} version={version} tables={count}")
+          engine.dispose()
+          PY
+      - name: Run explicit two mandatory PostgreSQL cases, no skip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_mentoria_m2c_fulfillment.py \
+            -k 'test_real_pg_reconciled_placement_and_rollback or test_real_pg_concurrent_same_order_is_idempotent' \
+            --junitxml=/tmp/m2c-real-pg.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/m2c-real-pg.xml").iter("testcase"))
+          actual = {c.attrib.get("name") for c in cases}
+          required = {
+              "test_real_pg_reconciled_placement_and_rollback",
+              "test_real_pg_concurrent_same_order_is_idempotent",
+          }
+          assert actual == required, (actual, required)
+          assert not any(c.find("skipped") is not None or
+                         c.find("failure") is not None or
+                         c.find("error") is not None for c in cases)
+          print("M2C_PG_NAMED_CASES=2_OF_2_PASS")
+          PY
+      - name: Run M2-C2 provider-ledger PostgreSQL cases, no skip
+        env:
+          MENTORIA_M2C2_ENABLED: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_mentoria_m2c2_reconciliation.py \
+            -k 'test_real_pg_m2c2_reconciliation_dedup or test_real_pg_m2c2_refund_revokes' \
+            --junitxml=/tmp/m2c2-real-pg.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/m2c2-real-pg.xml").iter("testcase"))
+          actual = {c.get("name") for c in cases}
+          assert actual == {"test_real_pg_m2c2_reconciliation_dedup", "test_real_pg_m2c2_refund_revokes"}
+          assert not any(c.find("skipped") is not None or c.find("failure") is not None
+                         or c.find("error") is not None for c in cases)
+          print("M2C2_PG_NAMED_CASES=2_OF_2_PASS")
+          PY
+      - name: Run mandatory M2-C2B durable ingress cases in real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_mentoria_m2c2b_postgres.py \
+            -k 'test_real_pg_webhook_duplicate_two_connections or test_real_pg_receipt_failure_rolls_back' \
+            --junitxml=/tmp/m2c2b-real-pg.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/m2c2b-real-pg.xml").iter("testcase"))
+          actual = {c.get("name") for c in cases}
+          assert actual == {
+              "test_real_pg_webhook_duplicate_two_connections",
+              "test_real_pg_receipt_failure_rolls_back",
+          }, (actual, cases)
+          assert not any(c.find("skipped") is not None or
+                         c.find("failure") is not None or
+                         c.find("error") is not None for c in cases)
+          print("M2C2B_PG_NAMED_CASES=2_OF_2_PASS")
+          PY
+      - name: Run full M2-C1 suite without ignored tests
+        run: |
+          python -m pytest -q tests/test_mentoria_m2c_fulfillment.py \
+            -rs --junitxml=/tmp/m2c-all.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/m2c-all.xml").iter("testcase"))
+          assert len(cases) >= 15
+          assert not any(c.find("skipped") is not None or
+                         c.find("failure") is not None or
+                         c.find("error") is not None for c in cases)
+          print(f"M2C_PG_SUITE=PASS total={len(cases)} skipped=0")
+          PY
+      - name: Record disposable container lifecycle
+        if: always()
+        env:
+          SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          echo "GitHub runner manages service cleanup after job."
+          test -z "$SERVICE_ID" || docker inspect -f \
+            'service={{.Name}} running={{.State.Running}}' "$SERVICE_ID" || true
