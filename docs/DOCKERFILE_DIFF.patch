@@ -1,0 +1,21 @@
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -11,7 +11,17 @@
+ # DIAG BUILD: separate installation, native STT import and platform app import.
+ # Preserve this build gate: failures must remain visible, never bypassed.
+ RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock.txt
+-RUN python -c "import faster_whisper; print('DIAG_FASTER_WHISPER_IMPORT_OK', flush=True)"
++RUN set +e; \
++    echo 'DG01_STT_CHECK_BEGIN'; \
++    echo 'DG01_CGROUP_BEFORE'; \
++    if [ -r /sys/fs/cgroup/memory.max ]; then cat /sys/fs/cgroup/memory.max; else echo 'memory.max unavailable'; fi; \
++    if [ -r /sys/fs/cgroup/memory.events ]; then cat /sys/fs/cgroup/memory.events; else echo 'memory.events unavailable'; fi; \
++    python -u -X faulthandler -c "print('DG01_PYTHON_RUNNING', flush=True); import faster_whisper; print('DIAG_FASTER_WHISPER_IMPORT_OK', flush=True)"; \
++    dg01_rc=$?; \
++    echo "DG01_STT_IMPORT_EXIT_CODE=${dg01_rc}"; \
++    echo 'DG01_CGROUP_AFTER'; \
++    if [ -r /sys/fs/cgroup/memory.events ]; then cat /sys/fs/cgroup/memory.events; fi; \
++    exit "${dg01_rc}"
+ RUN DATABASE_URL='sqlite+pysqlite:///:memory:' \
+     PLATFORM_ENVIRONMENT=test \
+     PLATFORM_AUTH_MODE=test \

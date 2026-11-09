@@ -1,0 +1,14 @@
+{
+  "status": "proposal_only",
+  "target": "Mentoria-backend STAGING (not production)",
+  "source_claim": "previous diagnostic Dockerfile snapshot, official Git HEAD not verified",
+  "original_dockerfile_sha256": "de24b1539a67ac456403c82039c6308316cd8dfa7e639f3f0f52524c2fd3a005",
+  "diagnostic_dockerfile_sha256": "84b54418930e85a8c176ca971b0b7ff80ad283016386bc2503366ac31888790f",
+  "modifications": [
+    "Dockerfile: one RUN step replaced with fail-closed diagnostics"
+  ],
+  "real_docker_build": "not_run",
+  "railway_deployment": "not_run",
+  "root_cause": "NOT_PROVEN",
+  "tests": "5 unit tests passed; POSIX shell diagnostics returns proper codes"
+}
