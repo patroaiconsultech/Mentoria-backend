@@ -8,11 +8,14 @@ COPY pyproject.toml uv.lock requirements.lock.txt alembic.ini ./
 COPY migrations ./migrations
 COPY scripts ./scripts
 COPY src ./src
-RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock.txt \
-    && DATABASE_URL='sqlite+pysqlite:///:memory:' \
-       PLATFORM_ENVIRONMENT=test \
-       PLATFORM_AUTH_MODE=test \
-       python -c "import faster_whisper; import orkio_v2.main; print('STT_DEPENDENCY_PRESENT')"
+# DIAG BUILD: separate installation, native STT import and platform app import.
+# Preserve this build gate: failures must remain visible, never bypassed.
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock.txt
+RUN python -c "import faster_whisper; print('DIAG_FASTER_WHISPER_IMPORT_OK', flush=True)"
+RUN DATABASE_URL='sqlite+pysqlite:///:memory:' \
+    PLATFORM_ENVIRONMENT=test \
+    PLATFORM_AUTH_MODE=test \
+    python -c "import orkio_v2.main; print('DIAG_PLATFORM_APP_IMPORT_OK', flush=True)"
 ARG ORKIO_STT_PREWARM_MODEL=""
 RUN mkdir -p "${PLATFORM_STT_MODEL_CACHE_DIR}" \
     && if [ -n "${ORKIO_STT_PREWARM_MODEL}" ]; then \
