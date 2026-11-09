@@ -1,0 +1,237 @@
+--- a/backend/src/orkio_v2/mentoria/assistant_routes.py
++++ b/backend/src/orkio_v2/mentoria/assistant_routes.py
+@@ -16,6 +16,25 @@
+ router = APIRouter(prefix="/api/v2/public/mentoria", tags=["mentoria-assistant"])
+ _INFLIGHT = asyncio.Semaphore(3)
+ _QUESTION_RE = re.compile(r"[^\s]")
++# Per-process admission control. A timed-out response does not imply that
++# the blocking provider worker has stopped; the slot belongs to the worker.
++_PROVIDER_TIMEOUT_SECONDS = 15.0
++_ADMISSION_TIMEOUT_SECONDS = 0.3
++
++
++def _provider_finished(task: asyncio.Task[str]) -> None:
++    """Release admission only once the blocking provider call has ended.
++
++    A late provider failure must also be observed, without logging its
++    potentially sensitive exception body.
++    """
++    _INFLIGHT.release()
++    if not task.cancelled():
++        try:
++            task.result()
++        except Exception:
++            pass
++
+ 
+ 
+ class AssistantQuestion(BaseModel):
+@@ -41,8 +60,6 @@
+         not settings.mentoria_owner_tenant_id.strip()
+         or not privacy_ready
+         or settings.mentoria_assistant_catalog_version != CATALOG_VERSION
+-        or settings.mentoria_assistant_model not in ALLOWED_MODELS
+-        or not (settings.openai_api_key or "").strip()
+     ):
+         raise HTTPException(503, "MENTORIA_ASSISTANT_CONFIGURATION_MISSING")
+     if not data.ai_processing_acknowledged or not data.no_sensitive_data_acknowledged:
+@@ -57,18 +74,32 @@
+     if approved is not None:
+         return {"reply": approved, "source": "catalog", "catalog_version": CATALOG_VERSION}
+ 
+-    # Avoid unbounded provider concurrency and infinite waits. No secrets logged.
+-    acquired = False
++    # Provider-only configuration must not disable approved local answers.
++    if (
++        settings.mentoria_assistant_model not in ALLOWED_MODELS
++        or not (settings.openai_api_key or "").strip()
++    ):
++        raise HTTPException(503, "MENTORIA_ASSISTANT_CONFIGURATION_MISSING")
++
++    # Admission slots follow the *worker*, not the HTTP timeout. asyncio's
++    # cancellation of to_thread cannot stop a blocking network call.
+     try:
+-        await asyncio.wait_for(_INFLIGHT.acquire(), timeout=0.3)
+-        acquired = True
++        await asyncio.wait_for(_INFLIGHT.acquire(), timeout=_ADMISSION_TIMEOUT_SECONDS)
++    except asyncio.TimeoutError:
++        raise HTTPException(503, "MENTORIA_ASSISTANT_UNAVAILABLE") from None
++    try:
++        worker = asyncio.create_task(
++            asyncio.to_thread(provider_reply, data.message, settings)
++        )
++        worker.add_done_callback(_provider_finished)
++    except BaseException:
++        _INFLIGHT.release()
++        raise
++
++    try:
+         answer = await asyncio.wait_for(
+-            asyncio.to_thread(provider_reply, data.message, settings),
+-            timeout=15,
++            asyncio.shield(worker), timeout=_PROVIDER_TIMEOUT_SECONDS
+         )
+     except (asyncio.TimeoutError, RuntimeError):
+         raise HTTPException(503, "MENTORIA_ASSISTANT_UNAVAILABLE") from None
+-    finally:
+-        if acquired:
+-            _INFLIGHT.release()
+     return {"reply": answer, "source": "ai", "catalog_version": CATALOG_VERSION}
+--- a/backend/tests/test_mentoria_m1ai_assistant.py
++++ b/backend/tests/test_mentoria_m1ai_assistant.py
+@@ -223,3 +223,155 @@
+     code = inspect.getsource(assistant_routes) + inspect.getsource(assistant)
+     for forbidden in ("db.commit(", "create_checkout(", "grant_access(", "set_cookie("):
+         assert forbidden not in code
++
++
++@pytest.mark.parametrize("field,value", [
++    ("openai_api_key", None),
++    ("openai_api_key", ""),
++    ("mentoria_assistant_model", ""),
++    ("mentoria_assistant_model", "unknown-model"),
++])
++def test_catalog_remains_available_without_provider_configuration(
++    client, monkeypatch, field, value
++):
++    """Catalog/PII safety is local. Provider settings gate only AI calls."""
++    from orkio_v2.mentoria import assistant_routes
++
++    monkeypatch.setattr(get_settings(), field, value)
++    monkeypatch.setattr(
++        assistant_routes, "provider_reply",
++        lambda *_a: pytest.fail("catalog must not use provider")
++    )
++    result = post(client, "Qual o preço da mentoria?")
++    assert result.status_code == 200
++    assert result.json() == {
++        "reply": UNPUBLISHED_REPLY,
++        "source": "catalog",
++        "catalog_version": CATALOG_VERSION,
++    }
++    # Missing provider readiness still fails closed for a general question.
++    unavailable = post(client)
++    assert unavailable.status_code == 503
++    assert unavailable.json()["detail"] == "MENTORIA_ASSISTANT_CONFIGURATION_MISSING"
++
++
++def test_timeout_retains_capacity_until_blocking_provider_really_finishes(
++    monkeypatch,
++):
++    """Timed-out workers still consume admission slots; no 4th provider call."""
++    import asyncio
++    import threading
++    from fastapi import HTTPException, Response
++    from orkio_v2.mentoria import assistant_routes
++
++    release = threading.Event()
++    lock = threading.Lock()
++    counters = {"active": 0, "peak": 0, "total": 0}
++
++    def blocked_provider(question, settings):
++        with lock:
++            counters["total"] += 1
++            counters["active"] += 1
++            counters["peak"] = max(counters["peak"], counters["active"])
++        try:
++            # The HTTP request expires first; this worker must keep its slot.
++            release.wait(timeout=3.0)
++            return "Comece medindo a qualidade e o tempo de uma tarefa."
++        finally:
++            with lock:
++                counters["active"] -= 1
++
++    monkeypatch.setattr(assistant_routes, "provider_reply", blocked_provider)
++    monkeypatch.setattr(assistant_routes, "_PROVIDER_TIMEOUT_SECONDS", 0.25)
++    monkeypatch.setattr(assistant_routes, "_ADMISSION_TIMEOUT_SECONDS", 0.035)
++
++    async def scenario():
++        data = assistant_routes.AssistantQuestion(**body())
++
++        async def ask():
++            try:
++                return await assistant_routes.ask_mentoria_assistant(
++                    data, Response()
++                )
++            except HTTPException as exc:
++                return exc.status_code
++
++        tasks = [asyncio.create_task(ask()) for _ in range(3)]
++        try:
++            for _ in range(100):
++                with lock:
++                    total = counters["total"]
++                if total == 3:
++                    break
++                await asyncio.sleep(0.01)
++            assert total == 3, "three workers must enter before their timeout"
++            assert await asyncio.gather(*tasks) == [503, 503, 503]
++
++            # Every HTTP call has timed out, but all workers are still alive.
++            assert await ask() == 503
++            with lock:
++                assert counters["peak"] == 3
++                assert counters["total"] == 3
++
++            release.set()
++            for _ in range(100):
++                if assistant_routes._INFLIGHT._value == 3:
++                    break
++                await asyncio.sleep(0.01)
++            assert assistant_routes._INFLIGHT._value == 3
++            fresh = await ask()
++            assert fresh["source"] == "ai"
++            with lock:
++                assert counters["total"] == 4
++                assert counters["peak"] <= 3
++        finally:
++            release.set()
++            await asyncio.gather(*tasks, return_exceptions=True)
++
++    asyncio.run(scenario())
++
++
++def test_cancelled_request_does_not_release_live_provider_worker(monkeypatch):
++    """Client cancellation does not free provider capacity prematurely."""
++    import asyncio
++    import threading
++    from fastapi import Response
++    from orkio_v2.mentoria import assistant_routes
++
++    started = threading.Event()
++    release = threading.Event()
++
++    def slow_provider(question, settings):
++        started.set()
++        release.wait(timeout=2.0)
++        return "Avalie uma tarefa simples com revisão humana."
++
++    monkeypatch.setattr(assistant_routes, "provider_reply", slow_provider)
++    monkeypatch.setattr(assistant_routes, "_PROVIDER_TIMEOUT_SECONDS", 1.0)
++
++    async def scenario():
++        data = assistant_routes.AssistantQuestion(**body())
++        task = asyncio.create_task(
++            assistant_routes.ask_mentoria_assistant(data, Response())
++        )
++        try:
++            for _ in range(100):
++                if started.is_set():
++                    break
++                await asyncio.sleep(0.01)
++            assert started.is_set()
++            task.cancel()
++            with pytest.raises(asyncio.CancelledError):
++                await task
++            # One worker is still running, despite request cancellation.
++            assert assistant_routes._INFLIGHT._value == 2
++        finally:
++            release.set()
++            for _ in range(100):
++                if assistant_routes._INFLIGHT._value == 3:
++                    break
++                await asyncio.sleep(0.01)
++            await asyncio.gather(task, return_exceptions=True)
++            assert assistant_routes._INFLIGHT._value == 3
++
++    asyncio.run(scenario())
