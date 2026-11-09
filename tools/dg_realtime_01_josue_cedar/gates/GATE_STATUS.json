@@ -1,0 +1,15 @@
+{
+  "target": "staging-web01",
+  "agent": "orkio/Josué",
+  "source_commit": "f43360621e8036cf8f96485e577a2a193c2baa43",
+  "ao01_write_go": false,
+  "backend_source_sha_reconfirmed": false,
+  "db_isolation_approved": false,
+  "administrative_tenant_identity_confirmed": false,
+  "origin_security_cleared": false,
+  "concurrency_exclusivity_signed": false,
+  "cost_limit_approved_and_enforced": false,
+  "write_unlock_patch_independently_reviewed": false,
+  "runtime_audio_proven": false,
+  "notes": "DECLARACOES NAO SAO PROVA. Aprovacoes independentes devem estar registradas fora deste JSON."
+}

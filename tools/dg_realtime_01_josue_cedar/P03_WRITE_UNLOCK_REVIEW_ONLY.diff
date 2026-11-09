@@ -1,0 +1,11 @@
+--- a/josue_cedar_activation.mjs
++++ b/josue_cedar_activation.mjs
+@@ -21,7 +21,7 @@
+ export const STATE_FILE = 'DG_REALTIME_01_JOSUE_STATE_LOCAL.json';
+ export const PREVIEW_FILE = 'DG_REALTIME_01_CEDAR_PREVIEW_LOCAL.mp3';
+ // Reviewed for offline tests only. AO-01 P0.2 has NO-GO for real writes.
+-export const REMOTE_WRITES_ENABLED = false;
++export const REMOTE_WRITES_ENABLED = true;
+
+ export function fail(message) { throw new Error(message); }
+ export function normalized(x) {

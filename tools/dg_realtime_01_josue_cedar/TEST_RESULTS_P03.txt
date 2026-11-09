@@ -1,0 +1,12 @@
+DG-REALTIME-01 P0.3 PREPARACAO — 2026-10-28
+Environment: local isolated Node.js v22.16.0
+node --check josue_cedar_activation.mjs : exit 0
+node josue_cedar_activation.mjs --plan : exit 0
+node --test tests/activation.test.mjs : 28 PASS / 0 FAIL / exit 0
+node --test tests/p03_readiness.test.mjs : 6 PASS / 0 FAIL / exit 0
+node scripts/p03_readiness.mjs : NO_GO / exit 2 EXPECTED
+P02_EXECUTABLE_SHA256: 339cb80d33032a14d821db3ee4f2db4d20678f9e6a0d351f12bb362b384b943b
+P02_TEST_SHA256: e72bc95edbdaab398e518a67f9f12b18ddb45b14bdf83e49c404ab67bbefa00f
+REMOTE_WRITES_ENABLED=false
+No Railway, provider, PostgreSQL, GitHub or network write performed.
+PASS_LOCAL != PASS_RUNTIME; AO01 gate remains NO_GO.
