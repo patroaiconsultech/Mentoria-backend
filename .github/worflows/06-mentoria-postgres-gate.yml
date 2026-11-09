@@ -1,0 +1,129 @@
+name: Mentoria M2-B isolated PostgreSQL qualification (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Human-approved exact 40-hex candidate commit"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-m2b-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        # Same reviewed candidate digest as workflow 07; actual pull still requires CI evidence.
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: mentoria_ci
+          POSTGRES_PASSWORD: isolated_test_only
+          POSTGRES_DB: mentoria_ci_m2b_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U mentoria_ci -d mentoria_ci_m2b_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      CI: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PLATFORM_ENVIRONMENT: "test"
+      PLATFORM_AUTH_MODE: "test"
+      PLATFORM_INVITATION_TOKEN_SECRET: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      MENTORIA_M2_ENABLED: "true"
+      MENTORIA_M2B_ALLOW_SCHEMA_TEST: "true"
+      DATABASE_URL: "postgresql+psycopg://mentoria_ci:isolated_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/mentoria_ci_m2b_test"
+      MENTORIA_M2B_TEST_DATABASE_URL: "postgresql+psycopg://mentoria_ci:isolated_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/mentoria_ci_m2b_test"
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify explicit human-pinned checkout commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          git diff --exit-code
+          echo "CHECKOUT_SHA=$EXPECTED_SHA"
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install project test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+      - name: Prove test target and empty disposable service
+        env:
+          SERVICE_ID: ${{ job.services.postgres.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SERVICE_ID"
+          test "$(docker inspect -f '{{.State.Running}}' "$SERVICE_ID")" = "true"
+          python scripts/mentoria_pg_gate.py preflight
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          db = create_engine(os.environ["DATABASE_URL"])
+          with db.connect() as conn:
+              name = conn.scalar(text("SELECT current_database()"))
+              count = conn.scalar(text("SELECT count(*) FROM pg_tables WHERE schemaname='public'"))
+              version = conn.scalar(text("SHOW server_version"))
+              assert name == "mentoria_ci_m2b_test" and count == 0, (name, count)
+              print(f"PG_DISPOSABLE_VERIFIED db={name} version={version} tables={count}")
+          db.dispose()
+          PY
+      - name: Migrations 001 through current Alembic head
+        run: |
+          set -euo pipefail
+          python scripts/check_migration_hygiene.py
+          python -m alembic upgrade head
+          python scripts/mentoria_pg_gate.py head
+      - name: Seven mandatory M2-B PostgreSQL cases, zero skip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_mentoria_m2b_postgres.py --junitxml=/tmp/m2b-real-pg.xml
+          python scripts/mentoria_pg_gate.py junit /tmp/m2b-real-pg.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/m2b-real-pg.xml").iter("testcase"))
+          actual = {case.attrib.get("name") for case in cases}
+          required = {
+              "test_last_seat_competing_orders_yield_only_one",
+              "test_idempotent_retry_does_not_duplicate_order",
+              "test_same_key_concurrent_retries_return_one_order",
+              "test_rolled_back_reservation_leaves_no_partial_rows",
+              "test_cross_tenant_subject_cannot_reserve_foreign_cohort",
+              "test_migration_017_018_pg_upgrade_downgrade_empty",
+              "test_migration_018_pg_downgrade_blocked_if_populated",
+          }
+          assert len(cases) == len(required) and actual == required, (actual, required)
+          assert not any(
+              case.find("skipped") is not None
+              or case.find("failure") is not None
+              or case.find("error") is not None
+              for case in cases
+          )
+          print("MENTORIA_M2B_PG_NAMED_CASES=7_OF_7_PASS")
+          PY
+      - name: Report service identity at job exit
+        if: always()
+        env:
+          SERVICE_ID: ${{ job.services.postgres.id }}
+        shell: bash
+        run: |
+          echo "GitHub runner owns disposable service cleanup after job."
+          test -z "$SERVICE_ID" || docker inspect -f             'service={{.Name}} running={{.State.Running}}' "$SERVICE_ID" || true
