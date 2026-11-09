@@ -1,65 +1,63 @@
-# EFATÀ 777 — Mentoria IA para Negócios — M3-A
+# DG-01 — Mentoria Backend, Falha de Import 2026-11-09
 
-Data: 2026-11-09
-Estado: SOURCE_PROPOSAL_ONLY — não aplicado em Git/Railway.
+**Gate:** PATCH CANDIDATO, não aplicado a GitHub/Railway, AO-01 deve auditar.
 
-## Objetivo
-Adicionar uma área privada de mentorado de **somente leitura** que consulta a
-autorização real no backend a cada acesso, sem criar matrículas, pedidos, cobranças
-ou conceder acesso. O conteúdo de aulas/vídeos **não** faz parte deste incremento.
+## Estado atual — comprovação
 
-## Arquivos (completos)
-Backend:
-- CREATE `src/orkio_v2/mentoria/portal_read.py`
-- CREATE `src/orkio_v2/mentoria/portal_http.py`
-- CREATE `tests/test_mentoria_m3a_portal.py`
-- REPLACE `src/orkio_v2/config.py`
-- REPLACE `src/orkio_v2/main.py`
+Log recebido `logs.1794250421739.json`, deployment `039c8d94-dbd0-5b42-85bc-d60eec8b984f`:
+- [7/11] pip instalação concluída
+- [8/11] `DIAG_FASTER_WHISPER_IMPORT_OK`
+- [9/11] `ModuleNotFoundError: No module named 'orkio_v2.database'`
+- O Dockerfile efetivamente compilado no log contém o passo simples `RUN python -c "import faster_whisper; ..."` (e não os marcadores `DG01_STT_CHECK_BEGIN` do patch instrumentado).
+- HEAD remoto Git e deploy commit SHA completo não verificados.
 
-Frontend:
-- CREATE `src/routes/MentoriaPortal.tsx`
-- CREATE `src/routes/MentoriaPortal.css`
-- CREATE `tests/mentoria-m3a.test.mjs`
-- REPLACE `src/App.tsx`
-- REPLACE `src/routes/MentoriaLanding.tsx`
-- REPLACE `src/routes/AccessPortal.tsx`
+## Correção causal mínima
 
-## Contrato de acesso
-- GET `/api/v2/mentoria/portal/me` — somente leitura, cookie/sessão canônica.
-- Exige `MENTORIA_PORTAL_ENABLED=true` no servidor (default: false).
-- A identidade vem do `require_principal` e `verified_buyer` (User, Membership ativa,
-  MentoriaMember ativa e e-mails verificados). Nenhum tenant no browser.
-- Consulta SQL sempre restringe tenant, comprador, turma, pedido `PAID`/`ENROLLED`,
-  enrollment `ACTIVE`, grant `ACTIVE` e intervalo de validade.
-- O predicado de domínio `allows_mentoria_access` é aplicado novamente.
-- Resposta contém somente título do programa, datas e timezone. Sem dados financeiros,
-  IDs de usuário, lista de participantes, vídeo ou links privilegiados.
-- Respostas com `Cache-Control: private, no-store`.
+`PATH: src/orkio_v2/database.py`
+`ACTION: CREATE`, **somente se estiver ausente na branch efetivamente construída**.
+Arquivo completo extraído sem alterações da baseline de staging de backend já fornecida pelo usuário.
+SHA256: `834b1d77f98768f65479d275447366f7cf8cb6a8010ba2542dca44038e806367`.
 
-## Aplicação controlada (NÃO EXECUTADA)
-1. Clonar os dois repositórios Premium oficiais; fixar HEAD SHA e branch.
-2. Comparar os hashes da pré-imagem/manifesto do acumulado antes de modificar arquivo.
-3. Nunca aplicar sobre `main` sem branch de revisão, diff e autorização.
-4. Aplicar os arquivos completos em branch temporária depois de reconciliar conflitos.
-5. Executar pytest e Node 20.20.2 com `npm ci`, typecheck/build.
-6. Testar acesso HTTP real com cookies e PostgreSQL 16+ descartável.
-7. Só após auditoria final AO-01 + decisão humana habilitar flag em STAGING.
+**Nunca substituir um `database.py` já presente ou divergente.**
+O arquivo contém criação do engine SQLAlchemy e `SessionLocal`: não execute migrations ou crie dados para testar import.
 
-## Testes executados localmente
-- pytest focused M3-A: **12 PASS**
-- pytest regressão selecionada Mentoria: **158 PASS, 4 SKIP PostgreSQL**
-- node --test (M0/M1/M1-AI/M3-A): **17 PASS**
-- Typecheck/build Vite Node20: NÃO EXECUTADOS.
-- PostgreSQL real, runtime, GitHub CI, Asaas sandbox: NÃO EXECUTADOS.
-- Os 13 cenários PostgreSQL anteriores do M2-B/M2-C também permanecem pendentes
-  conforme histórico e não foram qualificados nesta etapa.
+## Preflight antes de novo build
+
+Em um clone local da branch efetiva do backend:
+
+```bash
+python tools/audit_backend_modules.py /caminho/para/Mentoria-backend
+```
+
+Se quiser o relatório estruturado:
+
+```bash
+python tools/audit_backend_modules.py /caminho/para/Mentoria-backend --json
+```
+
+O script lê arquivos, sem executar/importar a aplicação, e só lê 160 caminhos `src/orkio_v2/` da baseline. Reporta `MISSING`, `DIVERGENT`, `MAIN_IMPORT_MISSING`. Divergências de hash são informativas: podem ser atualizações legítimas. Não copiar arquivos automaticamente por essa razão.
+
+**Aplicação:** criar branch, verificar HEAD e diff; salvar arquivo `payload/backend/src/orkio_v2/database.py` no caminho `src/orkio_v2/database.py`, depois reexecutar auditoria e testes; não escrever na main automaticamente.
+
+## Testes
+
+```bash
+python -S -m unittest discover -s tests -p 'test_backend_audit.py' -v
+python -m compileall -q payload/backend/src/orkio_v2/database.py
+```
+
+Testes reais PostgreSQL, import no Docker Linux e Railway runtime continuam **NOT_PROVEN**.
+
+## Riscos
+
+1. O último ZIP de GitHub enviado pelo usuário precede os reparos recentes; as 138 ausências de source aferidas nele não provam o estado atual de Git.
+2. `database.py` cria o engine na importação com variável de ambiente ativa; `DATABASE_URL` real deve ser gerida somente server-side.
+3. Mesmo após restaurar o arquivo, outros imports ausentes podem impedir o boot. Verificador de inventário deve preceder novo build.
 
 ## Rollback
-ANTES de Git: descartar este delta. Em branch aprovada: revert seletivo dos 11
-caminhos declarados, sem `git clean -fd`, sem apagar registros. Na configuração
-runtime, desligar primeiro `MENTORIA_PORTAL_ENABLED=false`. Não existe migration
-nova no M3-A; as migrations 017-019 permanecem não aplicadas operacionalmente.
 
-## Gate
-M3A_SOURCE_LOCAL=PASS; GIT_HEAD=NOT_PROVEN; POSTGRESQL=NOT_PROVEN;
-NODE20_BUILD=NOT_PROVEN; RAILWAY=NO_GO; PRODUCTION=NO_GO.
+Reverter apenas o commit que criou `src/orkio_v2/database.py`; se arquivo existia, abortar e revisar sem sobrescrever. Restaurar Dockerfile original do diagnóstico após terminar a qualificação.
+
+## AO-01
+
+Review `CREATE src/orkio_v2/database.py`, SHA, log da etapa 9/11, auditoria do clone real, testes e rollback. Produção: NO_GO.
