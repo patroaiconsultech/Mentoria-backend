@@ -15,7 +15,7 @@ RUN python -c "import faster_whisper; print('DIAG_FASTER_WHISPER_IMPORT_OK', flu
 RUN DATABASE_URL='sqlite+pysqlite:///:memory:' \
     PLATFORM_ENVIRONMENT=test \
     PLATFORM_AUTH_MODE=test \
-    python -c "import orkio_v2.main; print('DIAG_PLATFORM_APP_IMPORT_OK', flush=True)"
+    python -u scripts/dg01_diagnose_import.py
 ARG ORKIO_STT_PREWARM_MODEL=""
 RUN mkdir -p "${PLATFORM_STT_MODEL_CACHE_DIR}" \
     && if [ -n "${ORKIO_STT_PREWARM_MODEL}" ]; then \
