@@ -1,0 +1,31 @@
+.dg-mentoria .dg-mentoria-form {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 10px;
+  padding: clamp(22px, 3.5vw, 36px);
+  background: rgba(11, 22, 37, .97);
+  border: 1px solid rgba(209, 176, 115, .36);
+  border-radius: 22px;
+  color: #fff;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .18);
+}
+.dg-mentoria .dg-mentoria-form h3 { margin: 0; font-size: clamp(1.25rem, 2.2vw, 1.55rem); }
+.dg-mentoria .dg-mentoria-form > p { margin: 2px 0 7px; line-height: 1.5; color: #e6e9ee; }
+.dg-mentoria .dg-mentoria-form > label:not(.dg-mentoria-form__check) { font-size: .88rem; font-weight: 650; }
+.dg-mentoria .dg-mentoria-form > input {
+  box-sizing: border-box; width: 100%; border-radius: 9px; min-height: 44px;
+  border: 1px solid #a1aab4; background: #fff; color: #172231; padding: 10px 12px;
+  font: inherit;
+}
+.dg-mentoria .dg-mentoria-form input:focus-visible, .dg-mentoria .dg-mentoria-form button:focus-visible,
+.dg-mentoria .dg-mentoria-form a:focus-visible { outline: 3px solid #f1c977; outline-offset: 3px; }
+.dg-mentoria .dg-mentoria-form__check { display: flex; align-items: flex-start; gap: 10px; font-size: .85rem; line-height: 1.45; }
+.dg-mentoria .dg-mentoria-form__check input { margin-top: 4px; min-width: 18px; min-height: 18px; accent-color: #d5ae67; }
+.dg-mentoria .dg-mentoria-form__check a { color: #ffe2a4; text-decoration: underline; }
+.dg-mentoria .dg-mentoria-form button { margin-top: 8px; justify-content: center; }
+.dg-mentoria .dg-mentoria-form button:disabled { cursor: not-allowed; opacity: .62; }
+.dg-mentoria .dg-mentoria-form__honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.dg-mentoria .dg-mentoria-form__message { padding: 11px 13px; border-radius: 9px; margin: 4px 0; }
+.dg-mentoria .dg-mentoria-form__message--done { color: #143d2b; background: #c5f2d5; }
+.dg-mentoria .dg-mentoria-form__message--error { color: #5c1818; background: #ffdedc; }
+.dg-mentoria .dg-mentoria-form small { font-size: .75rem; color: #f1f3f6; line-height: 1.5; }

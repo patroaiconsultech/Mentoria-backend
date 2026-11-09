@@ -1,0 +1,43 @@
+/* Accessible assistant panel scoped to the mentoria page. */
+.dg-mentoria .dg-mentor-ai { padding: 64px 0 96px; }
+.dg-mentoria .dg-mentor-ai__heading { max-width: 720px; margin: 0 0 30px; }
+.dg-mentoria .dg-mentor-ai__heading h2 { font-size: clamp(28px,4vw,44px); line-height:1.2; margin: 10px 0 12px; }
+.dg-mentoria .dg-mentor-ai__heading p { color: var(--dg-muted); }
+.dg-mentoria .dg-mentor-ai__panel {
+  background: #17232a; border: 1px solid var(--dg-border); border-radius: 22px;
+  overflow: hidden; box-shadow: 0 22px 70px rgba(0,0,0,.24);
+}
+.dg-mentoria .dg-mentor-ai__intro { padding: 24px; display:flex; align-items:center; gap:15px; border-bottom: 1px solid var(--dg-border); }
+.dg-mentoria .dg-mentor-ai__intro div { display:grid; gap:4px; }
+.dg-mentoria .dg-mentor-ai__intro small { color:var(--dg-muted); font-size:12px; }
+.dg-mentoria .dg-mentor-ai__avatar { border: 1px solid var(--dg-gold); color:#f0ce9b; border-radius:14px; min-width:46px; height:46px; display:grid; place-items:center; font-weight:800; }
+.dg-mentoria .dg-mentor-ai__conversation { padding:26px 24px; display:flex; flex-direction:column; gap:16px; min-height:150px; max-height:450px; overflow-y:auto; }
+.dg-mentoria .dg-mentor-ai__bubble { max-width:min(82%,640px); padding:14px 18px; border-radius:17px; font-size:14px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+.dg-mentoria .dg-mentor-ai__bubble--assistant { align-self:flex-start; background:#28343b; color:#f7f3ee; border-bottom-left-radius:4px; }
+.dg-mentoria .dg-mentor-ai__bubble--visitor { align-self:flex-end; background:#dcb577; color:#172126; border-bottom-right-radius:4px; }
+.dg-mentoria .dg-mentor-ai__thinking { color:var(--dg-muted); font-size:13px; }
+.dg-mentoria .dg-mentor-ai__suggestions { display:flex; flex-wrap:wrap; gap:9px; padding:0 24px 24px; }
+.dg-mentoria .dg-mentor-ai__suggestions button { background:transparent; color:#f2d5a7; padding:9px 12px; border:1px solid #806a50; border-radius:99px; cursor:pointer; font-size:12px; }
+.dg-mentoria .dg-mentor-ai__form { display:grid; gap:12px; padding:22px 24px 24px; border-top:1px solid var(--dg-border); }
+.dg-mentoria .dg-mentor-ai__form > label { font-size:13px; font-weight:650; }
+.dg-mentoria .dg-mentor-ai__form textarea { resize:vertical; width:100%; min-height:72px; background:#10191f; border:1px solid #586169; border-radius:10px; padding:14px; color:#fff; font:inherit; }
+.dg-mentoria .dg-mentor-ai__form textarea:focus-visible, .dg-mentoria .dg-mentor-ai__form button:focus-visible,
+.dg-mentoria .dg-mentor-ai__suggestions button:focus-visible { outline:3px solid #eac78d; outline-offset:3px; }
+.dg-mentoria .dg-mentor-ai__consent { display:flex; gap:12px; align-items:flex-start; color:var(--dg-muted); font-weight:400!important; line-height:1.6; }
+.dg-mentoria .dg-mentor-ai__consent input { margin-top:5px; flex-shrink:0; }
+.dg-mentoria .dg-mentor-ai__consent a { text-decoration:underline; color:#f0d09a; }
+.dg-mentoria .dg-mentor-ai__bottom { display:flex; justify-content:space-between; gap:20px; align-items:center; }
+.dg-mentoria .dg-mentor-ai__bottom span { color:var(--dg-muted); font-size:12px; max-width:470px; }
+.dg-mentoria .dg-mentor-ai__bottom button { cursor:pointer; white-space:nowrap; border:0; background:#e7b86c; color:#132029; padding:12px 20px; font-weight:750; border-radius:8px; }
+.dg-mentoria .dg-mentor-ai__bottom button:disabled { opacity:.5; cursor:not-allowed; }
+.dg-mentoria .dg-mentor-ai__error { color:#ffd3c8; font-size:13px; }
+.dg-mentoria .dg-mentor-ai__cta { border-top:1px solid var(--dg-border); padding:18px 24px; display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; background:#1d2b32; font-size:13px; }
+.dg-mentoria .dg-mentor-ai__cta a { color:#f0d09a; text-decoration:underline; font-weight:700; }
+@media (max-width:600px) {
+  .dg-mentoria .dg-mentor-ai { padding:40px 0 65px; }
+  .dg-mentoria .dg-mentor-ai__intro,.dg-mentoria .dg-mentor-ai__conversation,
+  .dg-mentoria .dg-mentor-ai__form { padding:18px; }
+  .dg-mentoria .dg-mentor-ai__suggestions { padding:0 18px 18px; }
+  .dg-mentoria .dg-mentor-ai__bottom { align-items:stretch; flex-direction:column; }
+  .dg-mentoria .dg-mentor-ai__bubble { max-width:95%; }
+}
